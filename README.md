@@ -2,6 +2,15 @@
 A simple tray icon that shows green/yellow/red based on ping against a url
 
 Works on Windows, should also in Mac but must me tested.
+
+### Compile on Windows:
+
+```
+pyinstaller --noconsole --onefile connstatus.py
+```
+
+### Compile on Mac:
+
 Follows instructions for Mac pasted from ChatGPT
 
 1. Install PyInstaller

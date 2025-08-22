@@ -4,14 +4,27 @@ import ping3
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw
 import tkinter as tk
-from tkinter import simpledialog
+import os
+import json
 
 ping3.EXCEPTIONS = True
 ping3.DEBUG = False
 ping3.privileged = False
 
-# Config iniziale
-config = {
+# Percorso config cross-platform
+def get_config_path():
+    base = os.path.expanduser("~")
+    if os.name == "nt":  # Windows
+        folder = os.path.join(base, "AppData", "Local", "ConnStatus")
+    else:  # macOS / Linux
+        folder = os.path.join(base, "Library", "Application Support", "ConnStatus")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, "config.json")
+
+CONFIG_PATH = get_config_path()
+
+# Config default
+default_config = {
     "host": "google.it",
     "ping_interval": 2,
     "window": 10,
@@ -20,6 +33,25 @@ config = {
         "yellow": {"loss": 0.2, "latency": 200}
     }
 }
+
+# Carica config da file se esiste
+if os.path.exists(CONFIG_PATH):
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            config = json.load(f)
+    except Exception as e:
+        print("Errore caricamento config, uso default:", e)
+        config = default_config.copy()
+else:
+    config = default_config.copy()
+
+# Funzione per salvare config su file
+def save_config():
+    try:
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f, indent=4)
+    except Exception as e:
+        print("Errore salvataggio config:", e)
 
 results = []
 
@@ -53,9 +85,7 @@ def ping_loop(icon):
         # Stats
         success = [r for r in results if r[0]]
         loss = 1 - len(success) / len(results)
-        avg_latency = (
-            sum(r[1] for r in success if r[1]) / max(1, len(success))
-        )
+        avg_latency = sum(r[1] for r in success if r[1]) / max(1, len(success))
 
         # Decide color
         if loss <= config["thresholds"]["green"]["loss"] and avg_latency < config["thresholds"]["green"]["latency"]:
@@ -77,6 +107,7 @@ def open_settings():
                 config["thresholds"]["yellow"]["latency"] = int(entry_yellow_lat.get())
                 config["thresholds"]["green"]["loss"] = float(entry_green_loss.get())
                 config["thresholds"]["yellow"]["loss"] = float(entry_yellow_loss.get())
+                save_config()  # salva su file
                 root.destroy()
             except Exception as e:
                 print("Errore salvataggio config:", e)
@@ -117,7 +148,6 @@ def open_settings():
 
     # Avvio la GUI in un nuovo thread, così non blocca la tray
     threading.Thread(target=_run, daemon=True).start()
-
 
 def start():
     menu = Menu(
