@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw
 import tkinter as tk
 import os
 import json
+import matplotlib.pyplot as plt  # <--- aggiungi questo import
 
 # Configurazione ping3
 ping3.EXCEPTIONS = True
@@ -28,7 +29,7 @@ CONFIG_PATH = get_config_path()
 default_config = {
     "host": "google.it",
     "ping_interval": 2,
-    "window": 10,
+    "window": 1800,
     "thresholds": {
         "green": {"loss": 0.05, "latency": 100},
         "yellow": {"loss": 0.2, "latency": 200}
@@ -64,6 +65,7 @@ icons = {c: create_icon(c) for c in ["green", "yellow", "red"]}
 
 def ping_loop(icon):
     global results
+    ICON_WINDOW = 5  # ultimi 5 ping per l'icona
     while True:
         try:
             latency = ping3.ping(config["host"], timeout=1)
@@ -74,9 +76,10 @@ def ping_loop(icon):
         if len(results) > config["window"]:
             results = results[-config["window"]:]
 
-        # Calcola statistiche
-        success = [r for r in results if r[0]]
-        loss = 1 - len(success) / len(results) if results else 1
+        # Calcola statistiche per l'icona (ultimi 10 ping)
+        recent = results[-ICON_WINDOW:] if len(results) >= ICON_WINDOW else results
+        success = [r for r in recent if r[0]]
+        loss = 1 - len(success) / len(recent) if recent else 1
         avg_latency = sum(r[1] for r in success if r[1]) / max(1, len(success))
 
         # Determina stato
@@ -99,6 +102,7 @@ def open_settings():
                 config["thresholds"]["yellow"]["latency"] = int(entry_yellow_lat.get())
                 config["thresholds"]["green"]["loss"] = float(entry_green_loss.get())
                 config["thresholds"]["yellow"]["loss"] = float(entry_yellow_loss.get())
+                config["window"] = int(entry_window.get())  # <-- aggiungi questa riga
                 save_config(config)
                 root.destroy()
             except Exception as e:
@@ -113,7 +117,8 @@ def open_settings():
             ("Green lat soglia (ms):", config["thresholds"]["green"]["latency"]),
             ("Yellow lat soglia (ms):", config["thresholds"]["yellow"]["latency"]),
             ("Green loss soglia (0-1):", config["thresholds"]["green"]["loss"]),
-            ("Yellow loss soglia (0-1):", config["thresholds"]["yellow"]["loss"])
+            ("Yellow loss soglia (0-1):", config["thresholds"]["yellow"]["loss"]),
+            ("Window (numero ping da mantenere):", config["window"])  # <-- aggiungi questa riga
         ]
         entries = []
         for i, (label, value) in enumerate(fields):
@@ -123,16 +128,46 @@ def open_settings():
             entry.grid(row=i, column=1)
             entries.append(entry)
 
-        entry_host, entry_green_lat, entry_yellow_lat, entry_green_loss, entry_yellow_loss = entries
+        entry_host, entry_green_lat, entry_yellow_lat, entry_green_loss, entry_yellow_loss, entry_window = entries  # <-- aggiungi entry_window
 
         tk.Button(root, text="Salva", command=save).grid(row=len(fields), column=0, columnspan=2)
         root.mainloop()
 
     threading.Thread(target=_run, daemon=True).start()
 
+def show_graph():
+    # Prendi i dati dell'ultima ora (window * ping_interval secondi)
+    window_size = int(3600 / config["ping_interval"])
+    data = results[-window_size:] if len(results) > window_size else results[:]
+    times = list(range(-len(data)+1, 1))
+    latencies = [r[1] if r[0] else None for r in data]
+
+    # Determina colore per ogni punto
+    colors = []
+    for r in data:
+        if not r[0]:
+            colors.append("red")
+        elif r[1] < config["thresholds"]["green"]["latency"]:
+            colors.append("green")
+        elif r[1] < config["thresholds"]["yellow"]["latency"]:
+            colors.append("yellow")
+        else:
+            colors.append("red")
+
+    plt.figure(figsize=(10, 4))
+    plt.title("Andamento ping ultima ora")
+    plt.xlabel("Ping (secondi fa)")
+    plt.ylabel("Latency (ms)")
+    plt.scatter(times, latencies, c=colors, s=10)
+    plt.xlim(times[0], times[-1])
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
 def start():
     menu = Menu(
         MenuItem("Impostazioni", lambda icon, item: open_settings()),
+        MenuItem("Grafico", lambda icon, item: threading.Thread(target=show_graph, daemon=True).start()),  # <--- nuova voce
         MenuItem("Esci", lambda icon, item: icon.stop())
     )
     icon = Icon("NetStatus", icons["green"], menu=menu)

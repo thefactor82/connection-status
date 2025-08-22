@@ -5,8 +5,12 @@ Works on Windows, should also in Mac but must me tested.
 
 ### Compile on Windows:
 
+To compress a little the exe download UPX from https://upx.github.io/
+
+Unzip it then you can use it during compile step:
+
 ```
-pyinstaller --noconsole --onefile connstatus.py
+pyinstaller --noconsole --onefile --exclude-module test --exclude-module tkinter.test --clean --upx-dir C:\Users\mmatteis\Downloads\upx-5.0.2-win64 connstatus.py
 ```
 
 ### Compile on Mac:
