@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 import tkinter as tk
 import os
 import json
-import matplotlib.pyplot as plt  # <--- aggiungi questo import
+import matplotlib.pyplot as plt
 
 # Configurazione ping3
 ping3.EXCEPTIONS = True
