@@ -7,6 +7,7 @@ import tkinter as tk
 import os
 import json
 
+# Configurazione ping3
 ping3.EXCEPTIONS = True
 ping3.DEBUG = False
 ping3.privileged = False
@@ -14,9 +15,9 @@ ping3.privileged = False
 # Percorso config cross-platform
 def get_config_path():
     base = os.path.expanduser("~")
-    if os.name == "nt":  # Windows
+    if os.name == "nt":
         folder = os.path.join(base, "AppData", "Local", "ConnStatus")
-    else:  # macOS / Linux
+    else:
         folder = os.path.join(base, "Library", "Application Support", "ConnStatus")
     os.makedirs(folder, exist_ok=True)
     return os.path.join(folder, "config.json")
@@ -34,25 +35,23 @@ default_config = {
     }
 }
 
-# Carica config da file se esiste
-if os.path.exists(CONFIG_PATH):
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            config = json.load(f)
-    except Exception as e:
-        print("Errore caricamento config, uso default:", e)
-        config = default_config.copy()
-else:
-    config = default_config.copy()
+def load_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print("Errore caricamento config, uso default:", e)
+    return default_config.copy()
 
-# Funzione per salvare config su file
-def save_config():
+def save_config(config):
     try:
         with open(CONFIG_PATH, "w") as f:
             json.dump(config, f, indent=4)
     except Exception as e:
         print("Errore salvataggio config:", e)
 
+config = load_config()
 results = []
 
 def create_icon(color):
@@ -61,33 +60,26 @@ def create_icon(color):
     d.ellipse((8, 8, 56, 56), fill=color)
     return img
 
-icons = {
-    "green": create_icon("green"),
-    "yellow": create_icon("yellow"),
-    "red": create_icon("red")
-}
+icons = {c: create_icon(c) for c in ["green", "yellow", "red"]}
 
 def ping_loop(icon):
     global results
     while True:
         try:
             latency = ping3.ping(config["host"], timeout=1)
-            if latency is None:
-                results.append((False, None))
-            else:
-                results.append((True, latency * 1000))  # ms
+            results.append((latency is not None, latency * 1000 if latency else None))
         except Exception:
             results.append((False, None))
 
         if len(results) > config["window"]:
             results = results[-config["window"]:]
 
-        # Stats
+        # Calcola statistiche
         success = [r for r in results if r[0]]
-        loss = 1 - len(success) / len(results)
+        loss = 1 - len(success) / len(results) if results else 1
         avg_latency = sum(r[1] for r in success if r[1]) / max(1, len(success))
 
-        # Decide color
+        # Determina stato
         if loss <= config["thresholds"]["green"]["loss"] and avg_latency < config["thresholds"]["green"]["latency"]:
             state = "green"
         elif loss <= config["thresholds"]["yellow"]["loss"] and avg_latency < config["thresholds"]["yellow"]["latency"]:
@@ -107,46 +99,35 @@ def open_settings():
                 config["thresholds"]["yellow"]["latency"] = int(entry_yellow_lat.get())
                 config["thresholds"]["green"]["loss"] = float(entry_green_loss.get())
                 config["thresholds"]["yellow"]["loss"] = float(entry_yellow_loss.get())
-                save_config()  # salva su file
+                save_config(config)
                 root.destroy()
             except Exception as e:
                 print("Errore salvataggio config:", e)
 
         root = tk.Tk()
         root.title("Impostazioni rete")
-
-        # Chiudi correttamente con la X
         root.protocol("WM_DELETE_WINDOW", root.destroy)
 
-        tk.Label(root, text="Host:").grid(row=0, column=0, sticky="w")
-        entry_host = tk.Entry(root)
-        entry_host.insert(0, config["host"])
-        entry_host.grid(row=0, column=1)
+        fields = [
+            ("Host:", config["host"]),
+            ("Green lat soglia (ms):", config["thresholds"]["green"]["latency"]),
+            ("Yellow lat soglia (ms):", config["thresholds"]["yellow"]["latency"]),
+            ("Green loss soglia (0-1):", config["thresholds"]["green"]["loss"]),
+            ("Yellow loss soglia (0-1):", config["thresholds"]["yellow"]["loss"])
+        ]
+        entries = []
+        for i, (label, value) in enumerate(fields):
+            tk.Label(root, text=label).grid(row=i, column=0, sticky="w")
+            entry = tk.Entry(root)
+            entry.insert(0, value)
+            entry.grid(row=i, column=1)
+            entries.append(entry)
 
-        tk.Label(root, text="Green lat soglia (ms):").grid(row=1, column=0, sticky="w")
-        entry_green_lat = tk.Entry(root)
-        entry_green_lat.insert(0, config["thresholds"]["green"]["latency"])
-        entry_green_lat.grid(row=1, column=1)
+        entry_host, entry_green_lat, entry_yellow_lat, entry_green_loss, entry_yellow_loss = entries
 
-        tk.Label(root, text="Yellow lat soglia (ms):").grid(row=2, column=0, sticky="w")
-        entry_yellow_lat = tk.Entry(root)
-        entry_yellow_lat.insert(0, config["thresholds"]["yellow"]["latency"])
-        entry_yellow_lat.grid(row=2, column=1)
-
-        tk.Label(root, text="Green loss soglia (0-1):").grid(row=3, column=0, sticky="w")
-        entry_green_loss = tk.Entry(root)
-        entry_green_loss.insert(0, config["thresholds"]["green"]["loss"])
-        entry_green_loss.grid(row=3, column=1)
-
-        tk.Label(root, text="Yellow loss soglia (0-1):").grid(row=4, column=0, sticky="w")
-        entry_yellow_loss = tk.Entry(root)
-        entry_yellow_loss.insert(0, config["thresholds"]["yellow"]["loss"])
-        entry_yellow_loss.grid(row=4, column=1)
-
-        tk.Button(root, text="Salva", command=save).grid(row=5, column=0, columnspan=2)
+        tk.Button(root, text="Salva", command=save).grid(row=len(fields), column=0, columnspan=2)
         root.mainloop()
 
-    # Avvio la GUI in un nuovo thread, così non blocca la tray
     threading.Thread(target=_run, daemon=True).start()
 
 def start():
